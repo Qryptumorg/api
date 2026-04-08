@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db } from "../lib/db.js";
-import { vaultsTable } from "../schema/index.js";
+import { db } from "../lib/db";
+import { vaultsTable } from "../schema";
 import { eq } from "drizzle-orm";
 
 const router = Router();
