@@ -1,5 +1,7 @@
 # Qryptum API
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
+
 Backend API for the Qryptum protocol, built with Express and TypeScript.
 
 ## Endpoints
@@ -50,4 +52,6 @@ npm run dev
 
 ## License
 
-MIT
+[![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
+
+Copyright (c) 2026 [wei-zuan](https://github.com/wei-zuan) — see [LICENSE](LICENSE) for full terms.
