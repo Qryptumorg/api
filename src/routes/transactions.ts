@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db } from "../lib/db.js";
-import { transactionsTable, TRANSACTION_TYPES } from "../schema/index.js";
+import { db } from "../lib/db";
+import { transactionsTable, TRANSACTION_TYPES } from "../schema";
 import { eq, desc, count } from "drizzle-orm";
 
 const router = Router();
@@ -23,7 +23,7 @@ const RecordTransactionBody = z.object({
   tokenAddress: EthAddress,
   tokenSymbol: z.string().min(1).max(20),
   tokenName: z.string().min(1).max(100),
-  amount: z.string().regex(/^d+$/, "Amount must be a non-negative integer string"),
+  amount: z.string().regex(/^\d+$/, "Amount must be a non-negative integer string"),
   fromAddress: EthAddress,
   toAddress: EthAddress.optional(),
   networkId: z.number().int().positive(),
