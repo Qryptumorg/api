@@ -1,7 +1,8 @@
 {
-  "name": "qryptum-api",
-  "version": "1.0.0",
-  "description": "Qryptum backend API built with Express and TypeScript",
+  "name": "@qryptum/api",
+  "version": "0.1.0",
+  "description": "Qryptum REST API backend",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -10,20 +11,21 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "drizzle-orm": "^0.43.1",
-    "express": "^5.0.0",
-    "pg": "^8.20.0",
-    "pino": "^9.0.0",
-    "pino-http": "^10.0.0",
-    "zod": "^3.25.28"
+    "cors": "^2",
+    "drizzle-orm": "^0.38.0",
+    "express": "^5",
+    "pg": "^8",
+    "pino": "^9",
+    "pino-http": "^10",
+    "zod": "^3"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/node": "^22.0.0",
-    "@types/pg": "^8.18.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.3"
+    "@types/cors": "^2",
+    "@types/express": "^5",
+    "@types/node": "^22",
+    "@types/pg": "^8",
+    "pino-pretty": "^13",
+    "tsx": "^4",
+    "typescript": "^5"
   }
 }
