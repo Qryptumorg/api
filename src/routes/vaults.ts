@@ -1,24 +1,20 @@
 import { Router } from "express";
-import { z } from "zod";
-import { db } from "../lib/db";
-import { vaultsTable } from "../schema";
+import { db } from "@workspace/db";
+import { vaultsTable } from "@workspace/db/schema";
+import {
+  GetVaultParams,
+  RegisterVaultBody,
+  VerifyVaultBody,
+} from "@workspace/api-zod";
 import { eq } from "drizzle-orm";
+import crypto from "crypto";
 
 const router = Router();
 
-const EthAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "Invalid Ethereum address");
-
-const GetVaultParams = z.object({ walletAddress: EthAddress });
-
-const RegisterVaultBody = z.object({
-  walletAddress: EthAddress,
-  vaultContractAddress: EthAddress,
-  networkId: z.number().int().positive(),
-});
-
-const VerifyVaultBody = z.object({
-  walletAddress: EthAddress,
-});
+function hashProof(raw: string): string {
+  const salt = process.env["PROOF_SALT"] ?? "qryptum-default-salt";
+  return crypto.pbkdf2Sync(raw, salt, 100_000, 64, "sha512").toString("hex");
+}
 
 router.get("/vaults/:walletAddress", async (req, res) => {
   const params = GetVaultParams.safeParse(req.params);
@@ -50,7 +46,7 @@ router.get("/vaults/:walletAddress", async (req, res) => {
 router.post("/vaults", async (req, res) => {
   const body = RegisterVaultBody.safeParse(req.body);
   if (!body.success) {
-    return res.status(400).json({ error: "Invalid request body", details: body.error.flatten() });
+    return res.status(400).json({ error: "Invalid request body" });
   }
 
   const address = body.data.walletAddress.toLowerCase();
@@ -73,12 +69,19 @@ router.post("/vaults", async (req, res) => {
     });
   }
 
+  const proofHashSalted = body.data.proofHashSalted
+    ? hashProof(body.data.proofHashSalted)
+    : null;
+
   const inserted = await db
     .insert(vaultsTable)
     .values({
       walletAddress: address,
-      vaultContractAddress: body.data.vaultContractAddress.toLowerCase(),
-      networkId: body.data.networkId,
+      vaultContractAddress: body.data.vaultContractAddress
+        ? body.data.vaultContractAddress.toLowerCase()
+        : null,
+      proofHashSalted,
+      networkId: body.data.networkId ?? 11155111,
     })
     .returning();
 

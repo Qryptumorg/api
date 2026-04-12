@@ -1,16 +1,19 @@
-import { Router } from "express";
-import { pool } from "../lib/db";
+import { Router, type IRouter } from "express";
+import { HealthCheckResponse, HealthCheckFullResponse } from "@workspace/api-zod";
+import { pool } from "@workspace/db";
 
-const router = Router();
+const router: IRouter = Router();
 
 router.get("/healthz", (_req, res) => {
-  res.json({ status: "ok" });
+  const data = HealthCheckResponse.parse({ status: "ok" });
+  res.json(data);
 });
 
 router.get("/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
-    res.json({ status: "ok", db: "connected" });
+    const data = HealthCheckFullResponse.parse({ status: "ok", db: "connected" });
+    res.json(data);
   } catch {
     res.status(503).json({ status: "error", db: "disconnected" });
   }
