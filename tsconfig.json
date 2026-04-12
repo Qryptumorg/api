@@ -1,20 +1,19 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
-    "types": ["node"]
-  },
-  "include": ["src"],
-  "references": [
-    {
-      "path": "../../lib/db"
+    "compilerOptions": {
+      "target": "ESNext",
+      "module": "NodeNext",
+      "moduleResolution": "NodeNext",
+      "outDir": "dist",
+      "rootDir": "src",
+      "strict": false,
+      "noImplicitAny": false,
+      "skipLibCheck": true,
+      "esModuleInterop": true,
+      "allowSyntheticDefaultImports": true,
+      "resolveJsonModule": true,
+      "types": ["node"]
     },
-    {
-      "path": "../../lib/api-zod"
-    },
-    {
-      "path": "../../lib/integrations-anthropic-ai"
-    }
-  ]
-}
+    "include": ["src"],
+    "exclude": ["node_modules", "dist"]
+  }
+  
