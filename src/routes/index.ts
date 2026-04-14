@@ -6,6 +6,7 @@ import chatRouter from "./chat";
 import portfolioRouter from "./portfolio";
 import shieldRouter from "./shield";
 import proofRouter from "./proof";
+import configRouter from "./config";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(chatRouter);
 router.use(portfolioRouter);
 router.use(shieldRouter);
 router.use(proofRouter);
+router.use(configRouter);
 
 export default router;
