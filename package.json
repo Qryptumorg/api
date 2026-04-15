@@ -23,7 +23,8 @@
     "pg": "^8.20.0",
     "@anthropic-ai/sdk": "^0.78.0",
     "zod": "^3.25.76",
-    "drizzle-zod": "^0.8.3"
+    "drizzle-zod": "^0.8.3",
+    "ws": "^8"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
@@ -33,6 +34,7 @@
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",
-    "thread-stream": "3.1.0"
+    "thread-stream": "3.1.0",
+    "@types/ws": "^8"
   }
 }
