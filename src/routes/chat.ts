@@ -100,8 +100,9 @@ FORMATTING RULE: Never use the em dash character (—) or the pattern " — " an
 
 router.post("/chat", async (req, res) => {
   try {
-    const { messages } = req.body as {
+    const { messages, lang } = req.body as {
       messages: Array<{ role: "user" | "assistant"; content: string }>;
+      lang?: string;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -113,10 +114,20 @@ router.post("/chat", async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
+    const langNames: Record<string, string> = {
+      en: "English", ru: "Russian", zh: "Chinese", id: "Indonesian", ms: "Malay",
+      es: "Spanish", fr: "French", de: "German", ja: "Japanese", ko: "Korean", pt: "Portuguese",
+    };
+    const langCode = (lang ?? "en").toLowerCase().split("-")[0];
+    const langName = langNames[langCode] ?? "English";
+    const systemPrompt = langCode === "en"
+      ? QRYPTUM_SYSTEM_PROMPT
+      : `${QRYPTUM_SYSTEM_PROMPT}\n\nLANGUAGE RULE: The user's interface language is ${langName}. Always respond entirely in ${langName}, including all technical terms where a standard translation exists. Only keep code snippets and contract addresses in their original form.`;
+
     const stream = anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
-      system: QRYPTUM_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages,
     });
 
