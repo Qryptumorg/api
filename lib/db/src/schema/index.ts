@@ -57,6 +57,13 @@ export const railgunPendingTable = pgTable("railgun_pending", {
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// General-purpose key-value store for service state persistence (e.g. scan block pointers)
+export const kvStateTable = pgTable("kv_state", {
+    key:       text("key").primaryKey(),
+    value:     text("value").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertVaultSchema = createInsertSchema(vaultsTable).omit({ id: true, createdAt: true });
 export const insertTransactionSchema = createInsertSchema(transactionsTable).omit({ id: true, createdAt: true });
 export const insertAirVoucherSchema = createInsertSchema(airVouchersTable).omit({ id: true, createdAt: true });
