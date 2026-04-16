@@ -6,9 +6,9 @@
  * Runs silently in the background alongside the API server.
  *
  * Required env vars:
- *   ETHERSCAN_API_KEY   — Etherscan API key (works for both Sepolia and Mainnet)
- *   SEPOLIA_RPC_URL     — enables Sepolia polling
- *   MAINNET_RPC_URL     — enables Mainnet polling
+ *   ETHERSCAN_API_KEY   - Etherscan API key (works for both Sepolia and Mainnet)
+ *   SEPOLIA_RPC_URL     - enables Sepolia polling
+ *   MAINNET_RPC_URL     - enables Mainnet polling
  */
 
 import https from "https";
@@ -330,19 +330,19 @@ export function startQTokenAutoVerify(): void {
 
     const networks: NetworkState[] = [];
 
-    const sepoliaRpc = process.env.SEPOLIA_RPC_URL || "";
-    if (sepoliaRpc) {
-        networks.push({
-            name:             "sepolia",
-            chainId:          "11155111",
-            rpcUrl:           sepoliaRpc,
-            lastScannedBlock: 0,
-            verifiedSet:      new Set(),
-        });
-        logger.info("Auto-verify: Sepolia polling enabled");
-    }
+    // Sepolia: use configured RPC or fall back to public node (no key needed)
+    const sepoliaRpc = process.env["SEPOLIA_RPC_URL"] || "https://ethereum-sepolia-rpc.publicnode.com";
+    networks.push({
+        name:             "sepolia",
+        chainId:          "11155111",
+        rpcUrl:           sepoliaRpc,
+        lastScannedBlock: 0,
+        verifiedSet:      new Set(),
+    });
+    logger.info({ rpc: sepoliaRpc }, "Auto-verify: Sepolia polling enabled");
 
-    const mainnetRpc = process.env.MAINNET_RPC_URL || "";
+    // Mainnet: only poll if a private RPC is configured (public nodes may throttle heavy log scans)
+    const mainnetRpc = process.env["MAINNET_RPC_URL"] || "";
     if (mainnetRpc) {
         networks.push({
             name:             "mainnet",
@@ -352,6 +352,8 @@ export function startQTokenAutoVerify(): void {
             verifiedSet:      new Set(),
         });
         logger.info("Auto-verify: Mainnet polling enabled");
+    } else {
+        logger.info("Auto-verify: Mainnet polling skipped (MAINNET_RPC_URL not set)");
     }
 
     if (networks.length === 0) {
