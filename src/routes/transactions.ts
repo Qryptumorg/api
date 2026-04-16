@@ -6,7 +6,7 @@ import {
   GetTransactionsQueryParams,
   RecordTransactionBody,
 } from "@workspace/api-zod";
-import { eq, desc, count } from "drizzle-orm";
+import { eq, desc, count, and } from "drizzle-orm";
 
 const router = Router();
 
@@ -21,19 +21,28 @@ router.get("/transactions/:walletAddress", async (req, res) => {
   const offset = query.success ? (query.data.offset ?? 0) : 0;
 
   const address = params.data.walletAddress.toLowerCase();
+  const networkIdRaw = req.query.networkId;
+  const networkId = networkIdRaw !== undefined ? parseInt(String(networkIdRaw), 10) : null;
+  const networkFilter = networkId !== null && !isNaN(networkId)
+    ? eq(transactionsTable.networkId, networkId)
+    : undefined;
+
+  const whereClause = networkFilter
+    ? and(eq(transactionsTable.walletAddress, address), networkFilter)
+    : eq(transactionsTable.walletAddress, address);
 
   const [rows, totalResult] = await Promise.all([
     db
       .select()
       .from(transactionsTable)
-      .where(eq(transactionsTable.walletAddress, address))
+      .where(whereClause)
       .orderBy(desc(transactionsTable.createdAt))
       .limit(limit)
       .offset(offset),
     db
       .select({ count: count() })
       .from(transactionsTable)
-      .where(eq(transactionsTable.walletAddress, address)),
+      .where(whereClause),
   ]);
 
   return res.json({
