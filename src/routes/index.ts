@@ -7,6 +7,7 @@ import portfolioRouter from "./portfolio";
 import shieldRouter from "./shield";
 import proofRouter from "./proof";
 import configRouter from "./config";
+import railgunPendingRouter from "./railgunPending";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(portfolioRouter);
 router.use(shieldRouter);
 router.use(proofRouter);
 router.use(configRouter);
+router.use(railgunPendingRouter);
 
 export default router;
