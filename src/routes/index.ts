@@ -8,6 +8,7 @@ import shieldRouter from "./shield";
 import proofRouter from "./proof";
 import configRouter from "./config";
 import railgunPendingRouter from "./railgunPending";
+import rpcRouter from "./rpc";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(shieldRouter);
 router.use(proofRouter);
 router.use(configRouter);
 router.use(railgunPendingRouter);
+router.use(rpcRouter);
 
 export default router;
