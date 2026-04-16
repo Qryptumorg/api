@@ -28,5 +28,5 @@ server.listen(port, (err?: Error) => {
   }
 
   logger.info({ port }, "Server listening");
-  startQTokenAutoVerify();
+  void startQTokenAutoVerify();
 });
