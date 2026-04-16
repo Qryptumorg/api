@@ -9,6 +9,7 @@ import proofRouter from "./proof";
 import configRouter from "./config";
 import railgunPendingRouter from "./railgunPending";
 import rpcRouter from "./rpc";
+import verifyRouter from "./verify";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(proofRouter);
 router.use(configRouter);
 router.use(railgunPendingRouter);
 router.use(rpcRouter);
+router.use(verifyRouter);
 
 export default router;
