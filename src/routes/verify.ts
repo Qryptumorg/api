@@ -55,10 +55,8 @@ router.get("/verify/source/:address", async (req, res) => {
     if (!address?.match(/^0x[0-9a-fA-F]{40}$/))
         return res.status(400).json({ error: "Invalid address" });
     const ETHERSCAN_KEY = process.env.ETHERSCAN_KEY ?? "";
-    const chainMap: Record<string, string> = { "1": "https://api.etherscan.io", "11155111": "https://api-sepolia.etherscan.io" };
-    const base = chainMap[chainId] ?? chainMap["1"];
     try {
-        const url = `${base}/api?module=contract&action=getsourcecode&address=${address}&apikey=${ETHERSCAN_KEY}`;
+        const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getsourcecode&address=${address}&apikey=${ETHERSCAN_KEY}`;
         const r = await fetch(url);
         const json = await r.json() as { status: string; result: Array<{ CompilerVersion: string; OptimizationUsed: string; Runs: string; EVMVersion: string; SourceCode: string; ABI: string; ContractName: string }> };
         if (json.status !== "1" || !json.result?.[0]) return res.json(json);
