@@ -227,7 +227,7 @@ async function readQTokenMeta(rpcUrl: string, address: string): Promise<{ name: 
 let cachedVerifyInput: string | null = null;
 function loadVerifyInput(): string | null {
     if (cachedVerifyInput) return cachedVerifyInput;
-    const p = path.join(__dirname, "../../verify-inputs/shield-token.json");
+    const p = path.join(process.cwd(), "verify-inputs/shield-token.json");
     if (!fs.existsSync(p)) {
         logger.warn({ path: p }, "Auto-verify: shield-token.json not found");
         return null;
