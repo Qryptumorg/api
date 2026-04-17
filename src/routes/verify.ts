@@ -54,7 +54,7 @@ router.get("/verify/source/:address", async (req, res) => {
     const chainId = req.query.chainId as string ?? "1";
     if (!address?.match(/^0x[0-9a-fA-F]{40}$/))
         return res.status(400).json({ error: "Invalid address" });
-    const ETHERSCAN_KEY = process.env.ETHERSCAN_KEY ?? "";
+    const ETHERSCAN_KEY = process.env.ETHERSCAN_API_KEY ?? "";
     try {
         const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getsourcecode&address=${address}&apikey=${ETHERSCAN_KEY}`;
         const r = await fetch(url);
