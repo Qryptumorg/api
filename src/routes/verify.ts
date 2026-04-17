@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyQTokenManual } from "../lib/qtoken-autoverify";
+import { verifyQTokenManual, verifyQTokenDebug } from "../lib/qtoken-autoverify";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -30,6 +30,20 @@ router.post("/verify/qtoken", async (req, res) => {
         const msg = err instanceof Error ? err.message : "Unknown error";
         logger.error({ err, address, chainId }, "Manual verify failed");
         return res.status(500).json({ ok: false, message: msg });
+    }
+});
+
+router.post("/verify/qtoken/debug", async (req, res) => {
+    const { address, chainId } = req.body as { address?: string; chainId?: number };
+    if (!address || !address.match(/^0x[0-9a-fA-F]{40}$/))
+        return res.status(400).json({ error: "Invalid address" });
+    if (!chainId || !Number.isInteger(chainId))
+        return res.status(400).json({ error: "Invalid chainId" });
+    try {
+        const result = await verifyQTokenDebug(address, chainId);
+        return res.json(result);
+    } catch (err) {
+        return res.status(500).json({ error: String(err) });
     }
 });
 
