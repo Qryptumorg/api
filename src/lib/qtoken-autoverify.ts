@@ -394,6 +394,39 @@ async function pollNetwork(net: NetworkState): Promise<void> {
 
 const networkStates: Map<string, NetworkState> = new Map();
 
+export async function verifyQTokenDebug(qTokenAddress: string, chainId: number): Promise<Record<string, unknown>> {
+    const config = NETWORK_CONFIGS.find(n => n.chainId === String(chainId));
+    if (!config) return { error: `Unsupported chainId: ${chainId}` };
+    const rpcUrl = config.rpcUrl();
+    if (!rpcUrl) return { error: `No RPC for chainId ${chainId}` };
+
+    let meta: { name: string; symbol: string; vault: string; decimals: number };
+    try { meta = await readQTokenMeta(rpcUrl, qTokenAddress); }
+    catch (err) { return { error: "readQTokenMeta failed", detail: String(err) }; }
+
+    const verifyInput = loadVerifyInput();
+    if (!verifyInput) return { error: "shield-token.json not found", cwd: process.cwd() };
+
+    const constructorArgs = abiEncodeConstructorArgs(meta.name, meta.symbol, meta.vault, meta.decimals);
+
+    let res: { status: string; message: string; result: string };
+    try {
+        res = await etherscanPost(String(chainId), {
+            module: "contract", action: "verifysourcecode",
+            apikey: ETHERSCAN_KEY,
+            codeformat: "solidity-standard-json-input",
+            contractname: "contracts/ShieldToken.sol:ShieldToken",
+            contractaddress: qTokenAddress,
+            compilerversion: "v0.8.34+commit.80d5c536",
+            licenseType: "3",
+            sourceCode: verifyInput,
+            constructorArguments: constructorArgs,
+        });
+    } catch (err) { return { error: "etherscanPost failed", detail: String(err) }; }
+
+    return { meta, constructorArgs: constructorArgs.slice(0, 128) + "...", etherscan: res };
+}
+
 export async function verifyQTokenManual(qTokenAddress: string, chainId: number, force = false): Promise<{ ok: boolean; message: string }> {
     const config = NETWORK_CONFIGS.find(n => n.chainId === String(chainId));
     if (!config) return { ok: false, message: `Unsupported chainId: ${chainId}` };
