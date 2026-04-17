@@ -7,6 +7,7 @@ COPY pnpm-workspace.yaml package.json ./
 COPY packages/ packages/
 COPY src/ src/
 COPY build.mjs tsconfig.json ./
+COPY verify-inputs/ verify-inputs/
 
 RUN pnpm install --no-frozen-lockfile
 RUN pnpm --filter @workspace/api-server run build
