@@ -19,8 +19,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ethers } from "ethers";
-import { db } from "@workspace/db";
-import { kvStateTable } from "@workspace/db/schema";
+import { db, kvStateTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 
