@@ -224,16 +224,25 @@ async function readQTokenMeta(rpcUrl: string, address: string): Promise<{ name: 
     };
 }
 
-let cachedVerifyInput: string | null = null;
-function loadVerifyInput(): string | null {
-    if (cachedVerifyInput) return cachedVerifyInput;
-    const p = path.join(process.cwd(), "verify-inputs/shield-token.json");
+const cachedVerifyInputs: Record<string, string | null> = {};
+function loadVerifyInput(chainId: string): string | null {
+    if (chainId in cachedVerifyInputs) return cachedVerifyInputs[chainId];
+    // Mainnet (chainId=1) was deployed without viaIR; other chains (Sepolia etc) use viaIR
+    const filename = chainId === "1" ? "shield-token-mainnet.json" : "shield-token.json";
+    const p = path.join(process.cwd(), "verify-inputs", filename);
     if (!fs.existsSync(p)) {
-        logger.warn({ path: p }, "Auto-verify: shield-token.json not found");
-        return null;
+        // Fallback to default
+        const fallback = path.join(process.cwd(), "verify-inputs/shield-token.json");
+        if (!fs.existsSync(fallback)) {
+            logger.warn({ path: p }, "Auto-verify: shield-token.json not found");
+            cachedVerifyInputs[chainId] = null;
+            return null;
+        }
+        cachedVerifyInputs[chainId] = fs.readFileSync(fallback, "utf8");
+        return cachedVerifyInputs[chainId];
     }
-    cachedVerifyInput = fs.readFileSync(p, "utf8");
-    return cachedVerifyInput;
+    cachedVerifyInputs[chainId] = fs.readFileSync(p, "utf8");
+    return cachedVerifyInputs[chainId];
 }
 
 // ── Verify one qToken ───────────────────────────────────────────────────────────
@@ -254,7 +263,7 @@ export async function verifyQToken(rpcUrl: string, chainId: string, qTokenAddres
 
     logger.info({ chainId, qTokenAddress, ...meta }, "Auto-verify: submitting to Etherscan");
 
-    const verifyInput = loadVerifyInput();
+    const verifyInput = loadVerifyInput(chainId);
     if (!verifyInput) return;
 
     const constructorArgs = abiEncodeConstructorArgs(meta.name, meta.symbol, meta.vault, meta.decimals);
@@ -408,7 +417,7 @@ export async function verifyQTokenDebug(qTokenAddress: string, chainId: number):
     try { meta = await readQTokenMeta(rpcUrl, qTokenAddress); }
     catch (err) { return { error: "readQTokenMeta failed", detail: String(err) }; }
 
-    const verifyInput = loadVerifyInput();
+    const verifyInput = loadVerifyInput(String(chainId));
     if (!verifyInput) return { error: "shield-token.json not found", cwd: process.cwd() };
 
     const constructorArgs = abiEncodeConstructorArgs(meta.name, meta.symbol, meta.vault, meta.decimals);
