@@ -47,6 +47,34 @@ router.post("/verify/qtoken/debug", async (req, res) => {
     }
 });
 
+// GET /verify/source/:address?chainId=1
+// Fetch verified source + compiler settings from Etherscan (for already-verified contracts)
+router.get("/verify/source/:address", async (req, res) => {
+    const { address } = req.params;
+    const chainId = req.query.chainId as string ?? "1";
+    if (!address?.match(/^0x[0-9a-fA-F]{40}$/))
+        return res.status(400).json({ error: "Invalid address" });
+    const ETHERSCAN_KEY = process.env.ETHERSCAN_KEY ?? "";
+    const chainMap: Record<string, string> = { "1": "https://api.etherscan.io", "11155111": "https://api-sepolia.etherscan.io" };
+    const base = chainMap[chainId] ?? chainMap["1"];
+    try {
+        const url = `${base}/api?module=contract&action=getsourcecode&address=${address}&apikey=${ETHERSCAN_KEY}`;
+        const r = await fetch(url);
+        const json = await r.json() as { status: string; result: Array<{ CompilerVersion: string; OptimizationUsed: string; Runs: string; EVMVersion: string; SourceCode: string; ABI: string; ContractName: string }> };
+        if (json.status !== "1" || !json.result?.[0]) return res.json(json);
+        const s = json.result[0];
+        return res.json({
+            contract: s.ContractName,
+            compiler: s.CompilerVersion,
+            optimizer: { enabled: s.OptimizationUsed === "1", runs: parseInt(s.Runs) },
+            evmVersion: s.EVMVersion,
+            sourcePreview: s.SourceCode?.slice(0, 200),
+        });
+    } catch (err) {
+        return res.status(500).json({ error: String(err) });
+    }
+});
+
 router.get("/verify/status/:guid", async (req, res) => {
     const { guid } = req.params;
     const { chainId } = req.query as { chainId?: string };
