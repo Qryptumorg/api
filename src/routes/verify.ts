@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyQTokenManual, verifyQTokenDebug } from "../lib/qtoken-autoverify";
+import { verifyQTokenManual, verifyQTokenDebug, checkVerifyStatus } from "../lib/qtoken-autoverify";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -41,6 +41,18 @@ router.post("/verify/qtoken/debug", async (req, res) => {
         return res.status(400).json({ error: "Invalid chainId" });
     try {
         const result = await verifyQTokenDebug(address, chainId);
+        return res.json(result);
+    } catch (err) {
+        return res.status(500).json({ error: String(err) });
+    }
+});
+
+router.get("/verify/status/:guid", async (req, res) => {
+    const { guid } = req.params;
+    const { chainId } = req.query as { chainId?: string };
+    if (!guid) return res.status(400).json({ error: "Missing guid" });
+    try {
+        const result = await checkVerifyStatus(String(chainId ?? "1"), guid);
         return res.json(result);
     } catch (err) {
         return res.status(500).json({ error: String(err) });
