@@ -394,6 +394,10 @@ async function pollNetwork(net: NetworkState): Promise<void> {
 
 const networkStates: Map<string, NetworkState> = new Map();
 
+export async function checkVerifyStatus(chainId: string, guid: string): Promise<{ status: string; result: string }> {
+    return etherscanGet(chainId, { module: "contract", action: "checkverifystatus", guid, apikey: ETHERSCAN_KEY });
+}
+
 export async function verifyQTokenDebug(qTokenAddress: string, chainId: number): Promise<Record<string, unknown>> {
     const config = NETWORK_CONFIGS.find(n => n.chainId === String(chainId));
     if (!config) return { error: `Unsupported chainId: ${chainId}` };
