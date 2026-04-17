@@ -394,7 +394,7 @@ async function pollNetwork(net: NetworkState): Promise<void> {
 
 const networkStates: Map<string, NetworkState> = new Map();
 
-export async function verifyQTokenManual(qTokenAddress: string, chainId: number): Promise<{ ok: boolean; message: string }> {
+export async function verifyQTokenManual(qTokenAddress: string, chainId: number, force = false): Promise<{ ok: boolean; message: string }> {
     const config = NETWORK_CONFIGS.find(n => n.chainId === String(chainId));
     if (!config) return { ok: false, message: `Unsupported chainId: ${chainId}` };
 
@@ -404,11 +404,14 @@ export async function verifyQTokenManual(qTokenAddress: string, chainId: number)
     const state = networkStates.get(config.name);
     const verifiedSet = state?.verifiedSet ?? new Set<string>();
 
-    if (verifiedSet.has(qTokenAddress.toLowerCase())) {
+    const addr = qTokenAddress.toLowerCase();
+    if (force) {
+        verifiedSet.delete(addr);
+    } else if (verifiedSet.has(addr)) {
         return { ok: true, message: "Already verified (cached)" };
     }
 
-    await verifyQToken(rpcUrl, config.chainId, qTokenAddress, verifiedSet);
+    verifyQToken(rpcUrl, config.chainId, qTokenAddress, verifiedSet);
     return { ok: true, message: "Verification submitted. Check Railway logs for Etherscan result." };
 }
 
