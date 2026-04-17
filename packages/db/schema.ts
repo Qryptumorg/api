@@ -57,6 +57,12 @@ export const railgunPendingTable = pgTable("railgun_pending", {
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const kvStateTable = pgTable("kv_state", {
+    key:       text("key").primaryKey(),
+    value:     text("value").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const insertVaultSchema = createInsertSchema(vaultsTable).omit({ id: true, createdAt: true });
 export const insertTransactionSchema = createInsertSchema(transactionsTable).omit({ id: true, createdAt: true });
 export const insertAirVoucherSchema = createInsertSchema(airVouchersTable).omit({ id: true, createdAt: true });
@@ -70,9 +76,3 @@ export type InsertAirVoucher = z.infer<typeof insertAirVoucherSchema>;
 export type AirVoucher = typeof airVouchersTable.$inferSelect;
 export type InsertRailgunPending = z.infer<typeof insertRailgunPendingSchema>;
 export type RailgunPending = typeof railgunPendingTable.$inferSelect;
-
-export const kvStateTable = pgTable("kv_state", {
-  key:       varchar("key", { length: 255 }).primaryKey(),
-  value:     text("value").notNull(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
