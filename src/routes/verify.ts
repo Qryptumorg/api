@@ -12,7 +12,7 @@ const router = Router();
  * Useful for tokens created before the auto-verify service was running.
  */
 router.post("/verify/qtoken", async (req, res) => {
-    const { address, chainId } = req.body as { address?: string; chainId?: number };
+    const { address, chainId, force } = req.body as { address?: string; chainId?: number; force?: boolean };
 
     if (!address || !address.match(/^0x[0-9a-fA-F]{40}$/)) {
         return res.status(400).json({ error: "Missing or invalid address (must be 0x... 40 hex chars)" });
@@ -21,10 +21,10 @@ router.post("/verify/qtoken", async (req, res) => {
         return res.status(400).json({ error: "Missing or invalid chainId" });
     }
 
-    logger.info({ address, chainId }, "Manual qToken verify triggered");
+    logger.info({ address, chainId, force }, "Manual qToken verify triggered");
 
     try {
-        const result = await verifyQTokenManual(address, chainId);
+        const result = await verifyQTokenManual(address, chainId, force === true);
         return res.json(result);
     } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
