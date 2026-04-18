@@ -30,7 +30,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ETHERSCAN_KEY    = process.env["ETHERSCAN_API_KEY"] ?? "";
 const POLL_INTERVAL_MS = 60_000;
 const CONFIRM_BLOCKS   = 3;
-const MAX_RANGE        = 10_000; // safe for address-filtered eth_getLogs on most providers
+const MAX_RANGE        = 2_000;  // conservative default — works on publicnode, Infura PAYG, drpc
+const MIN_RANGE        = 9;      // absolute floor for free-tier Infura (max 10 blocks)
 
 // ── Topics (computed once at startup) ──────────────────────────────────────────
 
@@ -133,19 +134,30 @@ function jsonRpc(rpcUrl: string, method: string, params: unknown[]): Promise<unk
 
 type EthLog = { topics: string[]; data: string; address: string };
 
-async function getLogs(rpcUrl: string, fromBlock: number, toBlock: number, address: string | string[], topics: string[]): Promise<EthLog[]> {
+async function getLogs(rpcUrl: string, fromBlock: number, toBlock: number, address: string | string[], topics: string[], chunkSize = MAX_RANGE): Promise<EthLog[]> {
     const all: EthLog[] = [];
     let from = fromBlock;
     while (from <= toBlock) {
-        const to = Math.min(from + MAX_RANGE, toBlock);
-        const chunk = await jsonRpc(rpcUrl, "eth_getLogs", [{
-            fromBlock: "0x" + from.toString(16),
-            toBlock:   "0x" + to.toString(16),
-            address,
-            topics,
-        }]) as EthLog[];
-        all.push(...chunk);
-        from = to + 1;
+        const to = Math.min(from + chunkSize, toBlock);
+        try {
+            const chunk = await jsonRpc(rpcUrl, "eth_getLogs", [{
+                fromBlock: "0x" + from.toString(16),
+                toBlock:   "0x" + to.toString(16),
+                address,
+                topics,
+            }]) as EthLog[];
+            all.push(...chunk);
+            from = to + 1;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const isRangeError = /block range|block_range|logs limit|too many|max.*block|10 block/i.test(msg);
+            if (isRangeError && chunkSize > MIN_RANGE) {
+                const smaller = Math.max(MIN_RANGE, Math.floor(chunkSize / 10));
+                console.warn(`[autoverify] getLogs range too large (${chunkSize}), retrying with ${smaller}`);
+                return getLogs(rpcUrl, fromBlock, toBlock, address, topics, smaller);
+            }
+            throw err;
+        }
     }
     return all;
 }
