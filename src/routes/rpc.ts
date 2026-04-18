@@ -49,4 +49,33 @@ router.post("/rpc/drpc", async (req: Request, res: Response) => {
     await proxyRpc(rpcUrl, req, res);
 });
 
+/**
+ * POST /api/poi
+ * Proxy to RAILGUN Private POI aggregator.
+ * Browser XHR drops connection (ERR_CONNECTION_CLOSED) to the aggregator directly.
+ * Node.js server-side fetch works reliably. This proxy bridges the gap.
+ */
+const POI_AGGREGATOR = "https://ppoi-agg.horsewithsixlegs.xyz";
+
+router.post("/poi", async (req: Request, res: Response) => {
+    try {
+        const upstream = await fetch(POI_AGGREGATOR, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            body: JSON.stringify(req.body),
+        });
+        const data = await upstream.json();
+        res.status(upstream.status).json(data);
+    } catch {
+        res.status(502).json({
+            jsonrpc: "2.0",
+            error: { code: -32603, message: "POI proxy upstream error" },
+            id: req.body?.id ?? null,
+        });
+    }
+});
+
 export default router;
