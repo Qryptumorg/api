@@ -2,23 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 
 const router: IRouter = Router();
 
-/**
- * POST /api/rpc/1
- * Transparent JSON-RPC proxy to the private mainnet RPC URL (MAINNET_RPC_URL env var).
- * The client never sees the private URL - it only calls this endpoint.
- * Only supports chainId 1 (Ethereum mainnet).
- */
-router.post("/rpc/1", async (req: Request, res: Response) => {
-    const rpcUrl = process.env["MAINNET_RPC_URL"];
-    if (!rpcUrl) {
-        res.status(503).json({
-            jsonrpc: "2.0",
-            error: { code: -32603, message: "RPC proxy not configured" },
-            id: req.body?.id ?? null,
-        });
-        return;
-    }
-
+async function proxyRpc(rpcUrl: string, req: Request, res: Response) {
     try {
         const upstream = await fetch(rpcUrl, {
             method: "POST",
@@ -27,13 +11,42 @@ router.post("/rpc/1", async (req: Request, res: Response) => {
         });
         const data = await upstream.json();
         res.status(upstream.status).json(data);
-    } catch (err) {
+    } catch {
         res.status(502).json({
             jsonrpc: "2.0",
             error: { code: -32603, message: "RPC proxy upstream error" },
             id: req.body?.id ?? null,
         });
     }
+}
+
+/**
+ * POST /api/rpc/1
+ * Proxy to MAINNET_RPC_URL (keeps private RPC key out of browser bundle).
+ */
+router.post("/rpc/1", async (req: Request, res: Response) => {
+    const rpcUrl = process.env["MAINNET_RPC_URL"];
+    if (!rpcUrl) {
+        res.status(503).json({ jsonrpc: "2.0", error: { code: -32603, message: "RPC proxy not configured" }, id: req.body?.id ?? null });
+        return;
+    }
+    await proxyRpc(rpcUrl, req, res);
+});
+
+/**
+ * POST /api/rpc/drpc
+ * Proxy to dRPC paid endpoint using DRPC_API_KEY env var.
+ * dRPC paid: no block range limits, archive access, better uptime than free nodes.
+ * Returns 503 if DRPC_API_KEY is not set so the client falls back gracefully.
+ */
+router.post("/rpc/drpc", async (req: Request, res: Response) => {
+    const key = process.env["DRPC_API_KEY"];
+    if (!key) {
+        res.status(503).json({ jsonrpc: "2.0", error: { code: -32603, message: "dRPC not configured" }, id: req.body?.id ?? null });
+        return;
+    }
+    const rpcUrl = `https://lb.drpc.org/ogrpc?network=ethereum&dkey=${key}`;
+    await proxyRpc(rpcUrl, req, res);
 });
 
 export default router;
