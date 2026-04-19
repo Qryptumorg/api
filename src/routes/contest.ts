@@ -277,6 +277,45 @@ router.post("/contest/claim", async (req, res) => {
 });
 
 /**
+ * GET /contest/debug
+ * Admin only. Checks if chainHead in contract matches derivation from CONTEST_VAULT_PROOF.
+ * Diagnoses nonce-mismatch or wrong-proof issues.
+ */
+router.get("/contest/debug", async (req, res) => {
+  const adminToken = req.query.adminToken as string;
+  if (!ADMIN_TOKEN || adminToken !== ADMIN_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const vaultAddress = runtimeVaultAddress;
+  if (!vaultAddress) return res.status(503).json({ error: "No vault set" });
+
+  const vaultProof = process.env.CONTEST_VAULT_PROOF ?? "";
+  if (!vaultProof) return res.status(503).json({ error: "CONTEST_VAULT_PROOF not set" });
+
+  try {
+    const provider = getProvider();
+    const vault = new ethers.Contract(vaultAddress, EXPERIMENT_ABI, provider);
+    const chainHead = await vault.chainHead() as string;
+
+    const H0 = await deriveH0(vaultProof, vaultAddress);
+    const expectedH100 = keccak256Chain(H0, 100);
+    const match = expectedH100.toLowerCase() === chainHead.toLowerCase();
+
+    return res.json({
+      vaultAddress,
+      chainHeadOnChain: chainHead,
+      expectedH100,
+      match,
+      vaultProofFormat: validateProofFormat(vaultProof) ? "valid" : "INVALID",
+      salt: `${vaultAddress.toLowerCase()}[PROOF_SALT]`,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+/**
  * POST /contest/set-vault
  * Admin only. Update the vault address at runtime (e.g. after manual deploy).
  */
