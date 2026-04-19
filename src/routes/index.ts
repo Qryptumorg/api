@@ -10,6 +10,7 @@ import configRouter from "./config";
 import railgunPendingRouter from "./railgunPending";
 import rpcRouter from "./rpc";
 import verifyRouter from "./verify";
+import contestRouter from "./contest";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(configRouter);
 router.use(railgunPendingRouter);
 router.use(rpcRouter);
 router.use(verifyRouter);
+router.use(contestRouter);
 
 export default router;
