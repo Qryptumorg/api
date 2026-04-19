@@ -12,6 +12,9 @@ const DRPC_API_KEY        = process.env.DRPC_API_KEY ?? "";
 const MAINNET_RPC         = DRPC_API_KEY
   ? `https://lb.drpc.org/ogrpc?network=ethereum&dkey=${DRPC_API_KEY}`
   : (process.env.MAINNET_RPC_URL ?? "https://ethereum-rpc.publicnode.com");
+// Flashbots Protect: tx goes directly to builders, never visible in public mempool.
+// Prevents MEV bots from front-running the unqrypt proof.
+const FLASHBOTS_RPC       = "https://rpc.flashbots.net/fast";
 const DEPLOYER_PK         = process.env.DEPLOYER_PRIVATE_KEY ?? "";
 const QRYPTUM_SIGNER_PK   = process.env.QRYPTUM_SIGNER_PK ?? "";
 const ADMIN_TOKEN         = process.env.ADMIN_TOKEN ?? "";
@@ -343,6 +346,10 @@ function getProvider() {
   return new ethers.JsonRpcProvider(MAINNET_RPC);
 }
 
+function getFlashbotsProvider() {
+  return new ethers.JsonRpcProvider(FLASHBOTS_RPC);
+}
+
 function getDeployerSigner() {
   if (!DEPLOYER_PK) throw new Error("DEPLOYER_PRIVATE_KEY not set");
   return new ethers.Wallet(DEPLOYER_PK, getProvider());
@@ -351,6 +358,11 @@ function getDeployerSigner() {
 function getQryptumSigner() {
   if (!QRYPTUM_SIGNER_PK) throw new Error("QRYPTUM_SIGNER_PK not set");
   return new ethers.Wallet(QRYPTUM_SIGNER_PK, getProvider());
+}
+
+function getQryptumSignerFlashbots() {
+  if (!QRYPTUM_SIGNER_PK) throw new Error("QRYPTUM_SIGNER_PK not set");
+  return new ethers.Wallet(QRYPTUM_SIGNER_PK, getFlashbotsProvider());
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -534,12 +546,32 @@ router.post("/contest/claim", async (req, res) => {
       return res.status(400).json({ error: "Wrong vault proof. Try again." });
     }
 
-    // Proof is correct — broadcast via QryptumSigner
-    const signer = getQryptumSigner();
-    const vaultWithSigner = new ethers.Contract(vaultAddress, EXPERIMENT_ABI, signer);
+    // Proof is correct — broadcast via Flashbots Protect to hide proof from mempool.
+    // This prevents MEV bots from front-running the unqrypt tx by copying the proof.
+    const signer = getQryptumSignerFlashbots();
 
-    const tx = await (vaultWithSigner as any).unqrypt(USDC_MAINNET, balance, proof, recipient);
-    const receipt = await tx.wait();
+    // Fetch nonce from normal RPC (Flashbots RPC mirrors state but normal is more reliable)
+    const normalProvider = getProvider();
+    const nonce = await normalProvider.getTransactionCount(signer.address, "pending");
+
+    // Use EIP-1559 with elevated maxPriorityFeePerGas to win block inclusion over copycats
+    const feeData = await normalProvider.getFeeData();
+    const maxFeePerGas = (feeData.maxFeePerGas ?? ethers.parseUnits("30", "gwei")) * 2n;
+    const maxPriorityFeePerGas = ethers.parseUnits("5", "gwei");
+
+    const vaultWithSigner = new ethers.Contract(vaultAddress, EXPERIMENT_ABI, signer);
+    const tx = await (vaultWithSigner as any).unqrypt(
+      USDC_MAINNET, balance, proof, recipient,
+      { nonce, maxFeePerGas, maxPriorityFeePerGas }
+    );
+
+    // Flashbots /fast endpoint targets next 25 blocks (~5 min window).
+    // Wait up to 3 min for inclusion before timing out.
+    const receiptPromise = tx.wait();
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Flashbots inclusion timeout after 3 min")), 180_000)
+    );
+    const receipt = await Promise.race([receiptPromise, timeoutPromise]);
 
     return res.json({
       success: true,
@@ -547,6 +579,7 @@ router.post("/contest/claim", async (req, res) => {
       recipient,
       amountUsdc: (Number(balance) / 1e6).toFixed(2),
       broadcaster: signer.address,
+      note: "Sent via Flashbots Protect (private mempool)",
     });
   } catch (err: unknown) {
     const msg = String(err);
@@ -597,6 +630,74 @@ router.get("/contest/debug", async (req, res) => {
       chainHead,
       qUSDCBalance: (Number(balance) / 1e6).toFixed(2),
       ...matchInfo,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+/**
+ * POST /contest/reshield
+ * Admin only. Re-shield USDC into the vault after it has been drained.
+ * Uses the current proofChainHead to derive the next valid proof, then calls Qrypt().
+ */
+router.post("/contest/reshield", async (req, res) => {
+  const { adminToken, amountUsdc } = req.body as { adminToken?: string; amountUsdc?: number };
+  if (!ADMIN_TOKEN || adminToken !== ADMIN_TOKEN) return res.status(401).json({ error: "Unauthorized" });
+
+  const vaultAddress = runtimeVaultAddress;
+  if (!vaultAddress) return res.status(503).json({ error: "No vault set" });
+
+  const vaultProof = process.env.CONTEST_VAULT_PROOF ?? "";
+  if (!vaultProof || !validateProofFormat(vaultProof)) {
+    return res.status(500).json({ error: "CONTEST_VAULT_PROOF not configured on server" });
+  }
+
+  const targetUsdc = amountUsdc ?? CONTEST_VAULT_AMOUNT_USDC;
+  if (!targetUsdc || targetUsdc <= 0) return res.status(400).json({ error: "Invalid amountUsdc" });
+
+  try {
+    const signer   = getDeployerSigner();
+    const provider = getProvider();
+    const vault    = new ethers.Contract(vaultAddress, EXPERIMENT_ABI, provider);
+
+    const existingBalance = await vault.getQryptedBalance(USDC_MAINNET) as bigint;
+    if (existingBalance > 0n) {
+      return res.status(409).json({
+        error: "Vault is not empty",
+        balanceUsdc: (Number(existingBalance) / 1e6).toFixed(2),
+      });
+    }
+
+    const chainHead = await vault.getProofChainHead() as string;
+    const H0        = await deriveH0(vaultProof, vaultAddress);
+    const proof     = findValidProof(H0, chainHead);
+    if (!proof) {
+      return res.status(500).json({ error: "Cannot derive valid proof. Chain head may be out of sync with CONTEST_VAULT_PROOF." });
+    }
+
+    const rawAmount = BigInt(Math.round(targetUsdc * 1e6));
+    const usdc      = new ethers.Contract(USDC_MAINNET, ERC20_ABI, signer);
+    const deployerUSDC = await usdc.balanceOf(signer.address) as bigint;
+    if (deployerUSDC < rawAmount) {
+      return res.status(400).json({
+        error: `Deployer has insufficient USDC. Have ${(Number(deployerUSDC)/1e6).toFixed(2)}, need ${targetUsdc}`,
+      });
+    }
+
+    const approveTx = await usdc.approve(vaultAddress, rawAmount);
+    await approveTx.wait();
+
+    const vaultWithSigner = new ethers.Contract(vaultAddress, EXPERIMENT_ABI, signer);
+    const qryptTx         = await (vaultWithSigner as any).Qrypt(USDC_MAINNET, rawAmount, proof);
+    const receipt         = await qryptTx.wait();
+
+    const newBalance = await vault.getQryptedBalance(USDC_MAINNET) as bigint;
+    return res.json({
+      success: true,
+      txHash: receipt.hash,
+      amountShielded: (Number(rawAmount) / 1e6).toFixed(2),
+      newBalance: (Number(newBalance) / 1e6).toFixed(2),
     });
   } catch (err) {
     return res.status(500).json({ error: String(err) });
