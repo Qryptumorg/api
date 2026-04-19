@@ -2,6 +2,9 @@ import { Router } from "express";
 import { ethers } from "ethers";
 import { pbkdf2 } from "node:crypto";
 import { promisify } from "node:util";
+import * as https from "node:https";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 const pbkdf2Async = promisify(pbkdf2);
 const router = Router();
@@ -18,6 +21,7 @@ const FLASHBOTS_RPC       = "https://rpc.flashbots.net/fast";
 const DEPLOYER_PK         = process.env.DEPLOYER_PRIVATE_KEY ?? "";
 const QRYPTUM_SIGNER_PK   = process.env.QRYPTUM_SIGNER_PK ?? "";
 const ADMIN_TOKEN         = process.env.ADMIN_TOKEN ?? "";
+const ETHERSCAN_API_KEY   = process.env.ETHERSCAN_API_KEY ?? "";
 const USDC_MAINNET        = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
 let runtimeVaultAddress: string = process.env.CONTEST_VAULT_ADDRESS ?? "";
@@ -341,6 +345,112 @@ function findValidProof(H0: string, chainHead: string): string | null {
   }
   return null;
 }
+
+// ─── Etherscan Auto-Verify ────────────────────────────────────────────────────
+
+function etherscanPost(params: Record<string, string>): Promise<{ status: string; message: string; result: string }> {
+  return new Promise((resolve, reject) => {
+    const body = new URLSearchParams(params).toString();
+    const req  = https.request({
+      hostname: "api.etherscan.io",
+      path: "/v2/api?chainid=1",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    }, res => {
+      let d = "";
+      res.on("data", c => d += c);
+      res.on("end", () => { try { resolve(JSON.parse(d)); } catch { reject(new Error(d)); } });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+function etherscanGet(params: Record<string, string>): Promise<{ status: string; message: string; result: string }> {
+  return new Promise((resolve, reject) => {
+    const qs  = new URLSearchParams({ chainid: "1", ...params }).toString();
+    const req = https.request({
+      hostname: "api.etherscan.io",
+      path: `/v2/api?${qs}`,
+      method: "GET",
+    }, res => {
+      let d = "";
+      res.on("data", c => d += c);
+      res.on("end", () => { try { resolve(JSON.parse(d)); } catch { reject(new Error(d)); } });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+async function pollVerification(guid: string, label: string): Promise<boolean> {
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 8000));
+    try {
+      const res = await etherscanGet({ module: "contract", action: "checkverifystatus", guid, apikey: ETHERSCAN_API_KEY });
+      console.log(`[verify][${label}] status:`, res.result);
+      if (res.result === "Pass - Verified") return true;
+      if (res.result?.startsWith("Fail")) { console.error(`[verify][${label}] FAILED:`, res.result); return false; }
+    } catch (e) { console.error(`[verify][${label}] poll error:`, e); }
+  }
+  console.error(`[verify][${label}] timeout`);
+  return false;
+}
+
+function loadVerifyInput(): string | null {
+  const candidates = [
+    path.join(__dirname, "verification-input.json"),
+    path.join(process.cwd(), "src/verification-input.json"),
+    path.join(process.cwd(), "verification-input.json"),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
+  }
+  return null;
+}
+
+async function verifyExperimentContract(address: string, owner: string, initialChainHead: string): Promise<void> {
+  if (!ETHERSCAN_API_KEY) { console.warn("[verify] ETHERSCAN_API_KEY not set — skipping verification"); return; }
+  const sourceCode = loadVerifyInput();
+  if (!sourceCode) { console.warn("[verify] verification-input.json not found — skipping"); return; }
+
+  console.log("[verify] Waiting 30s for Etherscan to index new contract...");
+  await new Promise(r => setTimeout(r, 30_000));
+
+  const abiCoder        = ethers.AbiCoder.defaultAbiCoder();
+  const constructorArgs = abiCoder.encode(["address", "bytes32"], [owner, initialChainHead]).slice(2);
+
+  console.log("[verify] Submitting verification for PersonalQryptSafeExperiment at", address);
+  try {
+    const res = await etherscanPost({
+      module:            "contract",
+      action:            "verifysourcecode",
+      apikey:            ETHERSCAN_API_KEY,
+      codeformat:        "solidity-standard-json-input",
+      contractname:      "contracts/PersonalQryptSafeExperiment.sol:PersonalQryptSafeExperiment",
+      contractaddress:   address,
+      compilerversion:   "v0.8.34+commit.80d5c536",
+      licenseType:       "3",
+      sourceCode,
+      constructorArguments: constructorArgs,
+    });
+    console.log("[verify] Submit result:", res.status, res.message, res.result);
+    if (res.status === "1" && res.result) {
+      const ok = await pollVerification(res.result, address.slice(0, 10));
+      console.log("[verify]", ok ? "VERIFIED MIT" : "NOT VERIFIED — check Etherscan manually");
+    } else if (res.result?.toLowerCase().includes("already verified")) {
+      console.log("[verify] Already verified.");
+    }
+  } catch (e) { console.error("[verify] Error:", e); }
+}
+
+// ─── Setup state (logged to memory, readable via /contest/setup-status) ───────
+const setupLog: string[] = [];
+function slog(msg: string) { const line = `[${new Date().toISOString()}] ${msg}`; setupLog.push(line); console.log("[setup]", msg); }
 
 function getProvider() {
   return new ethers.JsonRpcProvider(MAINNET_RPC);
@@ -705,6 +815,14 @@ router.post("/contest/reshield", async (req, res) => {
 });
 
 /**
+ * GET /contest/setup-status
+ * Returns the auto-setup log for debugging (no auth required, log is non-sensitive).
+ */
+router.get("/contest/setup-status", (_req, res) => {
+  return res.json({ lines: setupLog, vaultAddress: runtimeVaultAddress });
+});
+
+/**
  * POST /contest/set-vault
  * Admin only. Update vault address at runtime.
  */
@@ -717,31 +835,39 @@ router.post("/contest/set-vault", (req, res) => {
 });
 
 // ─── Auto-setup on startup ────────────────────────────────────────────────────
-// If CONTEST_VAULT_ADDRESS is already set → skip deploy but check if shielding needed.
-// If not set and CONTEST_VAULT_PROOF is set → deploy + shield automatically.
 // Required env vars: DEPLOYER_PRIVATE_KEY, PROOF_SALT, CONTEST_VAULT_PROOF
-// Optional env vars: CONTEST_VAULT_AMOUNT_USDC (default 40), CONTEST_VAULT_ADDRESS
+// Optional: CONTEST_VAULT_AMOUNT_USDC (default 2), CONTEST_VAULT_ADDRESS, ETHERSCAN_API_KEY
 
-const CONTEST_VAULT_PROOF      = process.env.CONTEST_VAULT_PROOF ?? "";
-const CONTEST_VAULT_AMOUNT_USDC = Number(process.env.CONTEST_VAULT_AMOUNT_USDC ?? "40");
+const CONTEST_VAULT_PROOF       = process.env.CONTEST_VAULT_PROOF ?? "";
+const CONTEST_VAULT_AMOUNT_USDC = Number(process.env.CONTEST_VAULT_AMOUNT_USDC ?? "2");
 
 async function autoSetup(): Promise<void> {
-  if (!CONTEST_VAULT_PROOF || !validateProofFormat(CONTEST_VAULT_PROOF)) return;
-  if (!DEPLOYER_PK) { console.warn("[contest] DEPLOYER_PRIVATE_KEY not set — skipping auto-setup"); return; }
-  if (!PROOF_SALT)  { console.warn("[contest] PROOF_SALT not set — skipping auto-setup"); return; }
+  slog("Auto-setup starting...");
+
+  if (!CONTEST_VAULT_PROOF) { slog("SKIP: CONTEST_VAULT_PROOF not set"); return; }
+  if (!validateProofFormat(CONTEST_VAULT_PROOF)) { slog("SKIP: CONTEST_VAULT_PROOF invalid format (need 3 letters + 3 digits)"); return; }
+  if (!DEPLOYER_PK)  { slog("SKIP: DEPLOYER_PRIVATE_KEY not set"); return; }
+  if (!PROOF_SALT)   { slog("SKIP: PROOF_SALT not set"); return; }
 
   try {
     const signer   = getDeployerSigner();
     const provider = getProvider();
+    slog(`Deployer: ${signer.address}`);
+
+    const ethBal = await provider.getBalance(signer.address);
+    slog(`Deployer ETH: ${ethers.formatEther(ethBal)}`);
 
     // ── Step 1: Deploy if needed ──────────────────────────────────────────────
     if (!runtimeVaultAddress) {
-      console.log("[contest] No vault set — deploying PersonalQryptSafeExperiment...");
+      slog("No vault set — deploying PersonalQryptSafeExperiment...");
 
       const nonce         = await signer.getNonce();
       const futureAddress = ethers.getCreateAddress({ from: signer.address, nonce });
-      const H0            = await deriveH0(CONTEST_VAULT_PROOF, futureAddress);
-      const H100          = keccak256Chain(H0, 100);
+      slog(`futureAddress: ${futureAddress}`);
+
+      const H0   = await deriveH0(CONTEST_VAULT_PROOF, futureAddress);
+      const H100 = keccak256Chain(H0, 100);
+      slog(`H100 (initialChainHead): ${H100}`);
 
       const factory  = new ethers.ContractFactory(EXPERIMENT_ABI, EXPERIMENT_BYTECODE, signer);
       const contract = await factory.deploy(signer.address, H100);
@@ -749,58 +875,77 @@ async function autoSetup(): Promise<void> {
       const deployedAddress = await contract.getAddress();
 
       runtimeVaultAddress = deployedAddress;
-      console.log("[contest] Deployed:", deployedAddress);
-      console.log("[contest] Set Railway env CONTEST_VAULT_ADDRESS=" + deployedAddress);
+      slog(`Deployed at: ${deployedAddress}`);
+      if (deployedAddress.toLowerCase() !== futureAddress.toLowerCase()) {
+        slog(`WARNING: deployed address ${deployedAddress} differs from futureAddress ${futureAddress} — H0 derivation may be wrong!`);
+      }
+      slog(`ACTION NEEDED: set Railway env CONTEST_VAULT_ADDRESS=${deployedAddress}`);
+
+      // Fire-and-forget: auto-verify on Etherscan in background
+      verifyExperimentContract(deployedAddress, signer.address, H100).catch(e =>
+        slog(`Verify error: ${String(e)}`)
+      );
     } else {
-      console.log("[contest] Vault already set:", runtimeVaultAddress);
+      slog(`Vault already set: ${runtimeVaultAddress}`);
     }
 
     // ── Step 2: Shield USDC if qUSDC balance is 0 ────────────────────────────
-    const vault    = new ethers.Contract(runtimeVaultAddress, EXPERIMENT_ABI, provider);
-    const balance  = await vault.getQryptedBalance(USDC_MAINNET) as bigint;
+    const vault   = new ethers.Contract(runtimeVaultAddress, EXPERIMENT_ABI, provider);
+    const balance = await vault.getQryptedBalance(USDC_MAINNET) as bigint;
+    slog(`qUSDC balance: ${(Number(balance) / 1e6).toFixed(2)}`);
 
     if (balance > 0n) {
-      console.log("[contest] qUSDC balance already funded:", (Number(balance) / 1e6).toFixed(2), "qUSDC");
+      slog("Already funded. No shield needed.");
       return;
     }
 
-    if (!CONTEST_VAULT_AMOUNT_USDC || CONTEST_VAULT_AMOUNT_USDC <= 0) {
-      console.warn("[contest] CONTEST_VAULT_AMOUNT_USDC not set or zero — skipping shield step");
+    const targetUsdc = CONTEST_VAULT_AMOUNT_USDC;
+    if (!targetUsdc || targetUsdc <= 0) {
+      slog("SKIP shield: CONTEST_VAULT_AMOUNT_USDC is 0 or not set");
       return;
     }
 
-    console.log("[contest] Shielding", CONTEST_VAULT_AMOUNT_USDC, "USDC into vault...");
+    slog(`Shielding ${targetUsdc} USDC into vault...`);
 
     const chainHead = await vault.getProofChainHead() as string;
-    const H0        = await deriveH0(CONTEST_VAULT_PROOF, runtimeVaultAddress);
-    const proof     = findValidProof(H0, chainHead);
+    slog(`chainHead: ${chainHead}`);
+
+    const H0    = await deriveH0(CONTEST_VAULT_PROOF, runtimeVaultAddress);
+    const proof = findValidProof(H0, chainHead);
 
     if (!proof) {
-      console.error("[contest] Cannot derive valid proof for shield step. Check CONTEST_VAULT_PROOF / PROOF_SALT.");
+      slog("ERROR: findValidProof returned null. CONTEST_VAULT_PROOF or PROOF_SALT may be wrong, or chain is exhausted (>100 ops).");
+      slog(`Hint: vault address used for PBKDF2 salt: ${runtimeVaultAddress.toLowerCase()}`);
       return;
     }
+    slog(`Valid proof found for chainHead ${chainHead.slice(0, 12)}...`);
 
-    const rawAmount = BigInt(Math.round(CONTEST_VAULT_AMOUNT_USDC * 1e6));
-    const usdc      = new ethers.Contract(USDC_MAINNET, ERC20_ABI, signer);
-
+    const rawAmount    = BigInt(Math.round(targetUsdc * 1e6));
+    const usdc         = new ethers.Contract(USDC_MAINNET, ERC20_ABI, signer);
     const deployerUSDC = await usdc.balanceOf(signer.address) as bigint;
+    slog(`Deployer USDC: ${(Number(deployerUSDC) / 1e6).toFixed(2)}`);
+
     if (deployerUSDC < rawAmount) {
-      console.error(`[contest] Deployer has insufficient USDC. Have ${Number(deployerUSDC)/1e6} need ${CONTEST_VAULT_AMOUNT_USDC}`);
+      slog(`ERROR: Insufficient deployer USDC. Have ${(Number(deployerUSDC)/1e6).toFixed(2)}, need ${targetUsdc}`);
       return;
     }
 
+    slog("Sending approve tx...");
     const approveTx = await usdc.approve(runtimeVaultAddress, rawAmount);
     await approveTx.wait();
+    slog("Approve confirmed");
 
+    slog("Sending Qrypt tx...");
     const vaultWithSigner = new ethers.Contract(runtimeVaultAddress, EXPERIMENT_ABI, signer);
     const qryptTx         = await (vaultWithSigner as any).Qrypt(USDC_MAINNET, rawAmount, proof);
-    await qryptTx.wait();
+    const qryptReceipt    = await qryptTx.wait();
+    slog(`Qrypt confirmed: ${qryptReceipt.hash}`);
 
     const newBalance = await vault.getQryptedBalance(USDC_MAINNET) as bigint;
-    console.log("[contest] Shield done. qUSDC balance:", (Number(newBalance) / 1e6).toFixed(2));
+    slog(`Shield done. New qUSDC balance: ${(Number(newBalance) / 1e6).toFixed(2)}`);
 
   } catch (err) {
-    console.error("[contest] Auto-setup error:", err);
+    slog(`ERROR in auto-setup: ${String(err)}`);
   }
 }
 
