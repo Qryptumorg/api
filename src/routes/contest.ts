@@ -8,7 +8,10 @@ const router = Router();
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const PROOF_SALT = process.env.PROOF_SALT ?? "";
-const MAINNET_RPC = process.env.MAINNET_RPC_URL ?? "https://ethereum-rpc.publicnode.com";
+const DRPC_API_KEY = process.env.DRPC_API_KEY ?? "";
+const MAINNET_RPC = DRPC_API_KEY
+  ? `https://lb.drpc.org/ogrpc?network=ethereum&dkey=${DRPC_API_KEY}`
+  : (process.env.MAINNET_RPC_URL ?? "https://ethereum-rpc.publicnode.com");
 const DEPLOYER_PK = process.env.DEPLOYER_PRIVATE_KEY ?? "";
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 const USDC_MAINNET = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
