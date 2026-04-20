@@ -34,6 +34,20 @@ router.post("/rpc/1", async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/rpc/11155111
+ * Proxy to DRPC_SEPOLIA_URL (dRPC testnet) — keeps RPC key out of browser bundle.
+ * Returns 503 if DRPC_SEPOLIA_URL is not set so the client falls back to public RPCs.
+ */
+router.post("/rpc/11155111", async (req: Request, res: Response) => {
+    const rpcUrl = process.env["DRPC_SEPOLIA_URL"];
+    if (!rpcUrl) {
+        res.status(503).json({ jsonrpc: "2.0", error: { code: -32603, message: "Sepolia dRPC proxy not configured" }, id: req.body?.id ?? null });
+        return;
+    }
+    await proxyRpc(rpcUrl, req, res);
+});
+
+/**
  * POST /api/rpc/drpc
  * Proxy to dRPC paid endpoint using DRPC_API_KEY env var.
  * dRPC paid: no block range limits, archive access, better uptime than free nodes.
@@ -52,8 +66,9 @@ router.post("/rpc/drpc", async (req: Request, res: Response) => {
 /**
  * POST /api/poi
  * Proxy to RAILGUN Private POI aggregator.
- * Browser XHR drops connection (ERR_CONNECTION_CLOSED) to the aggregator directly.
- * Node.js server-side fetch works reliably. This proxy bridges the gap.
+ * The aggregator drops browser XHR connections (ERR_CONNECTION_CLOSED) but
+ * responds correctly to server-side Node.js fetch. This proxy fixes that gap.
+ * The RAILGUN engine is configured to use this URL instead of the aggregator directly.
  */
 const POI_AGGREGATOR = "https://ppoi-agg.horsewithsixlegs.xyz";
 
@@ -69,7 +84,7 @@ router.post("/poi", async (req: Request, res: Response) => {
         });
         const data = await upstream.json();
         res.status(upstream.status).json(data);
-    } catch {
+    } catch (err) {
         res.status(502).json({
             jsonrpc: "2.0",
             error: { code: -32603, message: "POI proxy upstream error" },

@@ -61,7 +61,7 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
         chainId:            "11155111",
         factoryAddress:     "0xeaa722e996888b662E71aBf63d08729c6B6802F4",
         factoryDeployBlock: 7_000_000,
-        rpcUrl:             () => process.env["SEPOLIA_RPC_URL"] ?? "https://ethereum-sepolia-rpc.publicnode.com",
+        rpcUrl:             () => process.env["DRPC_SEPOLIA_URL"] ?? "https://ethereum-sepolia-rpc.publicnode.com",
     },
 ];
 

@@ -32,7 +32,7 @@ function getRpcUrl(chainId: number): string | undefined {
         return process.env["MAINNET_RPC_URL"] ?? "https://eth.llamarpc.com";
     }
     const RPCS: Record<number, string> = {
-        11155111: "https://ethereum-sepolia-rpc.publicnode.com",
+        11155111: process.env["DRPC_SEPOLIA_URL"] ?? "https://ethereum-sepolia-rpc.publicnode.com",
         137:      "https://polygon.llamarpc.com",
         42161:    "https://arbitrum.llamarpc.com",
         56:       "https://binance.llamarpc.com",
@@ -104,7 +104,7 @@ router.post("/shield/broadcast", async (req, res) => {
             to,
             data,
             value: value ? BigInt(value) : 0n,
-            gasLimit: 2_000_000n,
+            gasLimit: 5_000_000n,
         });
 
         logger.info({ txHash: tx.hash, signerAddress: signer.address }, "Broadcast TX submitted");
