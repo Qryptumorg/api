@@ -6,15 +6,17 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
-// CORS must be FIRST - before pinoHttp and all other middleware.
-// Explicit preflight handler so OPTIONS is answered before any logger runs.
+// CORS first - before pinoHttp and all other middleware.
+// cors() with preflightContinue:false (default) handles OPTIONS automatically.
+// Note: Express 5 / path-to-regexp@8 rejects bare "*" routes - do NOT use
+// app.options("*", ...) as it crashes on startup with PathError.
 const corsOptions: CorsOptions = {
   origin: "*",
   methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  preflightContinue: false,
   maxAge: 86400,
 };
-app.options("*", cors(corsOptions));
 app.use(cors(corsOptions));
 
 app.use(
