@@ -2,19 +2,34 @@ import { Router, type IRouter, type Request, type Response } from "express";
 
 const router: IRouter = Router();
 
+// 25 s timeout - Railway hard-kills at 30 s. Express must respond first so
+// the CORS headers we set at app level actually reach the browser. Without a
+// server-side timeout the upstream hangs until Railway drops the TCP connection
+// at the infra layer (no headers = browser sees "No Access-Control-Allow-Origin").
+const PROXY_TIMEOUT_MS = 25_000;
+
 async function proxyRpc(rpcUrl: string, req: Request, res: Response) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), PROXY_TIMEOUT_MS);
     try {
         const upstream = await fetch(rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(req.body),
+            signal: ac.signal,
         });
+        clearTimeout(timer);
         const data = await upstream.json();
         res.status(upstream.status).json(data);
-    } catch {
-        res.status(502).json({
+    } catch (err: any) {
+        clearTimeout(timer);
+        const timedOut = err?.name === "AbortError";
+        res.status(timedOut ? 504 : 502).json({
             jsonrpc: "2.0",
-            error: { code: -32603, message: "RPC proxy upstream error" },
+            error: {
+                code: -32603,
+                message: timedOut ? "RPC proxy timeout" : "RPC proxy upstream error",
+            },
             id: req.body?.id ?? null,
         });
     }
@@ -73,6 +88,8 @@ router.post("/rpc/drpc", async (req: Request, res: Response) => {
 const POI_AGGREGATOR = "https://ppoi-agg.horsewithsixlegs.xyz";
 
 router.post("/poi", async (req: Request, res: Response) => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), PROXY_TIMEOUT_MS);
     try {
         const upstream = await fetch(POI_AGGREGATOR, {
             method: "POST",
@@ -81,13 +98,20 @@ router.post("/poi", async (req: Request, res: Response) => {
                 "Accept": "application/json",
             },
             body: JSON.stringify(req.body),
+            signal: ac.signal,
         });
+        clearTimeout(timer);
         const data = await upstream.json();
         res.status(upstream.status).json(data);
-    } catch (err) {
-        res.status(502).json({
+    } catch (err: any) {
+        clearTimeout(timer);
+        const timedOut = err?.name === "AbortError";
+        res.status(timedOut ? 504 : 502).json({
             jsonrpc: "2.0",
-            error: { code: -32603, message: "POI proxy upstream error" },
+            error: {
+                code: -32603,
+                message: timedOut ? "POI proxy timeout" : "POI proxy upstream error",
+            },
             id: req.body?.id ?? null,
         });
     }
