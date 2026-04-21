@@ -1,15 +1,14 @@
 import express, { type Express } from "express";
-import cors from "cors";
+import cors, { type CorsOptions } from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
 
-// CORS - must be FIRST, before all other middleware including pinoHttp.
-// Explicit preflight handler ensures OPTIONS requests are answered before
-// any logger or body parser runs.
-const corsOptions: cors.CorsOptions = {
+// CORS must be FIRST - before pinoHttp and all other middleware.
+// Explicit preflight handler so OPTIONS is answered before any logger runs.
+const corsOptions: CorsOptions = {
   origin: "*",
   methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"],
