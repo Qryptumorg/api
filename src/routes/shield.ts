@@ -11,8 +11,8 @@ const RAILGUN_ALLOWED = new Set<string>([
     // Ethereum mainnet + Arbitrum (share the same proxy address)
     "0xfa7093cdd9ee6932b4eb2c9e1cde7ce00b1fa4b9",
     // Ethereum mainnet relayAdapt (current + historical)
-    "0xac9f360ae85469b27aedddeafc579ef2d052ad405",
-    "0x22af4edbe3de885dda8f0a0653e6209e44e5b84",
+    "0xac9f360ae85469b27aedddeafc579ef2d052ad40",
+    "0x22af4edbe3de885dda8f0a0653e6209e44e5b840",
     "0xc3f2c8f9d5f0705de706b1302b7a039e1e11ac88",
     // Arbitrum relayAdapt
     "0xb4f2d77bd12c6b548ae398244d7fad4abce4d89b",
@@ -26,9 +26,21 @@ const RAILGUN_ALLOWED = new Set<string>([
     "0x590162bf4b50f6576a459b75309ee21d92178a10",
 ]);
 
+/**
+ * RPC URL for the broadcaster (server-side, ethers.js JsonRpcProvider).
+ *
+ * Priority order for mainnet (chainId 1):
+ *   1. dRPC via DRPC_API_KEY - paid endpoint, no rate limits, archive access.
+ *      Used directly here (no proxy hop needed - we are already on the server).
+ *   2. MAINNET_RPC_URL fallback (Infura, etc.) if DRPC_API_KEY is not set.
+ *   3. Public llamarpc as last resort.
+ *
+ * Sepolia uses DRPC_SEPOLIA_URL (full URL including key already embedded).
+ */
 function getRpcUrl(chainId: number): string | undefined {
     if (chainId === 1) {
-        // Use private RPC if configured, fall back to public
+        const drpcKey = process.env["DRPC_API_KEY"];
+        if (drpcKey) return `https://lb.drpc.org/ogrpc?network=ethereum&dkey=${drpcKey}`;
         return process.env["MAINNET_RPC_URL"] ?? "https://eth.llamarpc.com";
     }
     const RPCS: Record<number, string> = {
